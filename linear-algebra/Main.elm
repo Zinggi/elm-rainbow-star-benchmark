@@ -3,30 +3,46 @@ module Main exposing (..)
 import Math.Vector3 as V3 exposing (Vec3, vec3)
 import Math.Matrix4 as M4 exposing (Mat4)
 import WebGL exposing (..)
-import Html.Events exposing (onClick)
 import Html exposing (Html, div, button, text)
 import AnimationFrame
-import String
 import Html.Attributes exposing (width, height)
+import Plot exposing (..)
+import Plot.Grid as Grid
+import Plot.Line as Line
+import Plot.Axis as Axis
 
 
 type alias Model =
-    { time : Float, cubes : Int, dt : Float, dtDebounce : Float }
+    { time : Float
+    , cubes : Int
+    , dt : Float
+    , frames : Int
+    , results : List Plot.Point
+    }
 
 
 type Msg
     = Tick Float
-    | AddCubes Int
 
 
 main : Program Never Model Msg
 main =
     Html.program
-        { init = ( Model 0 1 0 0, Cmd.none )
+        { init = ( Model 0 100 0 0 [], Cmd.none )
         , view = view
         , subscriptions = (\model -> AnimationFrame.diffs Tick)
         , update = update
         }
+
+
+maxCubes : Int
+maxCubes =
+    2000
+
+
+maxFrames : Int
+maxFrames =
+    100
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -34,38 +50,56 @@ update msg model =
     case msg of
         Tick dt ->
             let
-                dtDebounce =
-                    model.dtDebounce + dt
-
                 time =
                     model.time + dt / 1000
-            in
-                if dtDebounce > 200 then
-                    { model | time = time, dtDebounce = 0, dt = dt } ! []
-                else
-                    { model | time = time, dtDebounce = dtDebounce } ! []
 
-        AddCubes n ->
-            { model | cubes = max 1 (model.cubes + n) } ! []
+                ( dt_, cubes, frames, results ) =
+                    if model.frames == maxFrames && model.cubes <= maxCubes then
+                        ( 0, model.cubes + 100, 0, ( toFloat model.cubes, toFloat maxFrames / model.dt * 1000 ) :: model.results )
+                    else
+                        ( model.dt + dt, model.cubes, model.frames + 1, model.results )
+            in
+                { model
+                    | time = time
+                    , cubes = cubes
+                    , frames = frames
+                    , dt = dt_
+                    , results = results
+                }
+                    ! []
 
 
 view : Model -> Html Msg
-view { time, cubes, dt } =
-    div []
-        [ button [ onClick (AddCubes 10) ] [ text "10 more cubes" ]
-        , button [ onClick (AddCubes 100) ] [ text "100 more" ]
-        , button [ onClick (AddCubes -10) ] [ text "10 less cubes" ]
-        , button [ onClick (AddCubes -100) ] [ text "100 less cubes" ]
-        , div [] [ text ("Number of cubes: " ++ toString cubes) ]
-        , div [] [ text ("dt: " ++ formatFloat dt ++ "ms") ]
-        , div [] [ text ("fps: " ++ formatFloat (1000 / dt)) ]
-        , WebGL.toHtml [ width 900, height 900 ] (scene cubes time)
-        ]
-
-
-formatFloat a =
-    toString (toFloat (round (1000 * a)) / 1000)
-        |> String.padRight 6 ' '
+view { time, cubes, results } =
+    if cubes <= maxCubes then
+        WebGL.toHtml [ width 900, height 900 ] (scene cubes time)
+    else
+        plot
+            [ size ( 800, 400 )
+            , margin ( 20, 20, 40, 40 )
+            ]
+            [ verticalGrid
+                [ Grid.lines
+                    [ Line.stroke "lightgray" ]
+                ]
+            , horizontalGrid
+                [ Grid.lines
+                    [ Line.stroke "lightgray" ]
+                ]
+            , xAxis
+                [ Axis.line [ Line.stroke "gray" ]
+                , Axis.tickDelta 200
+                ]
+            , yAxis
+                [ Axis.line [ Line.stroke "gray" ]
+                , Axis.tickDelta 5
+                ]
+            , line
+                [ Line.stroke "blue"
+                , Line.strokeWidth 2
+                ]
+                (List.reverse results)
+            ]
 
 
 
